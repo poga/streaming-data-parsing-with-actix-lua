@@ -29,7 +29,13 @@ lazy_static! {
         LuaActorBuilder::new()
             .on_handle_with_lua(
                 r#"
-            -- print('lua add ' .. string.len(ctx.msg))
+            local json = require("json")
+            local data = json.decode(ctx.msg)
+            for i, v in pairs(data["items"]) do
+                if string.find(v["name"], "Belly of the Beast") then
+                    print(data["accountName"])
+                end
+            end
             return 0
             "#,
             ).build()
@@ -40,7 +46,7 @@ lazy_static! {
         LuaActorBuilder::new()
             .on_handle_with_lua(
                 r#"
-            print('lua remove ' .. ctx.msg)
+            print('lua remove')
             return 0
             "#,
             ).build()
@@ -118,6 +124,7 @@ impl Handler<StashMessage> for ParseStash {
                     }
                 }
 
+                // TODO: pass userdata instead of string
                 if new_item_stash_items.len() > 0 {
                     new_item_stash["items"] = Value::from(new_item_stash_items);
                     ON_ADD.do_send(LuaMessage::from(new_item_stash.to_string()));
