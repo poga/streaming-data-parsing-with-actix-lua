@@ -19,9 +19,6 @@ use std::iter::FromIterator;
 use std::sync::Mutex;
 use std::time::Duration;
 
-// TODO: implement proper poe api types
-// TODO: implement PartialEq, Eq, Hash on Item type with stash_key-item_key
-
 const API_HOST: &str = "http://www.pathofexile.com/api/public-stash-tabs";
 
 lazy_static! {
