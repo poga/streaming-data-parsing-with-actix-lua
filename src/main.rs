@@ -67,7 +67,7 @@ impl Actor for ParseStash {
 impl actix::Supervised for ParseStash {}
 impl SystemService for ParseStash {}
 
-struct StashMessage(String);
+struct StashMessage(Value);
 
 impl Message for StashMessage {
     type Result = ();
@@ -76,7 +76,75 @@ impl Message for StashMessage {
 impl Handler<StashMessage> for ParseStash {
     type Result = ();
 
-    fn handle(&mut self, msg: StashMessage, ctx: &mut Context<Self>) -> Self::Result {}
+    fn handle(&mut self, msg: StashMessage, ctx: &mut Context<Self>) -> Self::Result {
+        let v = msg.0;
+
+        let mut stashes = STASHES.lock().unwrap();
+        for stash in v["stashes"].as_array().unwrap() {
+            let stash_id = stash["id"].as_str().unwrap();
+            if let Some(_) = stashes.get(stash_id) {
+                // diff
+                let mut next_items = HashSet::new();
+                for item in stash["items"].as_array().unwrap() {
+                    let item_key =
+                        format!("{}/{}", stash_id.to_string(), item["id"].as_str().unwrap());
+                    next_items.insert(item_key);
+                }
+
+                let mut items = ITEMS.lock().unwrap();
+                let clone = items.clone();
+                let new_items: HashSet<&String> = HashSet::from_iter(next_items.difference(&clone));
+                let removed_items: HashSet<&String> =
+                    HashSet::from_iter(clone.difference(&next_items));
+
+                let mut new_item_stash = stash.clone();
+                let mut new_item_stash_items = Vec::<Value>::new();
+
+                let mut removed_item_stash = stash.clone();
+                let mut removed_item_stash_items = Vec::<Value>::new();
+
+                for item in stash["items"].as_array().unwrap() {
+                    let item_key =
+                        format!("{}/{}", stash_id.to_string(), item["id"].as_str().unwrap());
+
+                    if let Some(_) = new_items.get(&item_key) {
+                        // println!("new item on market: {:?}", item);
+                        new_item_stash_items.push(item.clone());
+                    }
+
+                    if let Some(_) = removed_items.get(&item_key) {
+                        // println!("remove item from market: {:?}", item);
+                        removed_item_stash_items.push(item.clone());
+                    }
+                }
+
+                if new_item_stash_items.len() > 0 {
+                    new_item_stash["items"] = Value::from(new_item_stash_items);
+                    ON_ADD.do_send(LuaMessage::from(new_item_stash.to_string()));
+                }
+
+                if removed_item_stash_items.len() > 0 {
+                    removed_item_stash["items"] = Value::from(removed_item_stash_items);
+                    ON_REMOVE.do_send(LuaMessage::from(removed_item_stash.to_string()));
+                }
+
+                for item_key in removed_items {
+                    items.remove(item_key);
+                }
+            } else {
+                stashes.insert(stash_id.to_string());
+                let mut items = ITEMS.lock().unwrap();
+                for item in stash["items"].as_array().unwrap() {
+                    let item_key =
+                        format!("{}/{}", stash_id.to_string(), item["id"].as_str().unwrap());
+                    items.insert(item_key);
+                }
+                ON_ADD.do_send(LuaMessage::from(stash.to_string()));
+            }
+        }
+
+        println!("tracked stashes: {}", stashes.len());
+    }
 }
 
 #[derive(Default)]
@@ -101,7 +169,7 @@ impl Handler<Poll> for RequestActor {
             .finish()
             .unwrap()
             .send()
-            .map_err(|_| ())
+            .map_err(|e| println!("request error {:?}", e))
             .and_then(move |response| {
                 // println!("Response: {:?}", response);
                 response.body().limit(10 * 1024 * 1024).map_err(|e| {
@@ -115,84 +183,9 @@ impl Handler<Poll> for RequestActor {
                 println!("Body: {:?}", body.len());
                 println!("next: {:?}", v["next_change_id"]);
 
-                // TODO: move to another actor
-                let mut stashes = STASHES.lock().unwrap();
-                for stash in v["stashes"].as_array().unwrap() {
-                    let stash_id = stash["id"].as_str().unwrap();
-                    if let Some(_) = stashes.get(stash_id) {
-                        // diff
-                        let mut next_items = HashSet::new();
-                        for item in stash["items"].as_array().unwrap() {
-                            let item_key = format!(
-                                "{}/{}",
-                                stash_id.to_string(),
-                                item["id"].as_str().unwrap()
-                            );
-                            next_items.insert(item_key);
-                        }
+                let act = System::current().registry().get::<ParseStash>();
+                act.do_send(StashMessage(v.clone()));
 
-                        let mut items = ITEMS.lock().unwrap();
-                        let clone = items.clone();
-                        let new_items: HashSet<&String> =
-                            HashSet::from_iter(next_items.difference(&clone));
-                        let removed_items: HashSet<&String> =
-                            HashSet::from_iter(clone.difference(&next_items));
-
-                        // TODO: send new_item/remove_item to lua
-
-                        let mut new_item_stash = stash.clone();
-                        let mut new_item_stash_items = Vec::<Value>::new();
-
-                        let mut removed_item_stash = stash.clone();
-                        let mut removed_item_stash_items = Vec::<Value>::new();
-
-                        for item in stash["items"].as_array().unwrap() {
-                            let item_key = format!(
-                                "{}/{}",
-                                stash_id.to_string(),
-                                item["id"].as_str().unwrap()
-                            );
-
-                            if let Some(_) = new_items.get(&item_key) {
-                                // println!("new item on market: {:?}", item);
-                                new_item_stash_items.push(item.clone());
-                            }
-
-                            if let Some(_) = removed_items.get(&item_key) {
-                                // println!("remove item from market: {:?}", item);
-                                removed_item_stash_items.push(item.clone());
-                            }
-                        }
-
-                        if new_item_stash_items.len() > 0 {
-                            new_item_stash["items"] = Value::from(new_item_stash_items);
-                            ON_ADD.do_send(LuaMessage::from(new_item_stash.to_string()));
-                        }
-
-                        if removed_item_stash_items.len() > 0 {
-                            removed_item_stash["items"] = Value::from(removed_item_stash_items);
-                            ON_REMOVE.do_send(LuaMessage::from(removed_item_stash.to_string()));
-                        }
-
-                        for item_key in removed_items {
-                            items.remove(item_key);
-                        }
-                    } else {
-                        stashes.insert(stash_id.to_string());
-                        let mut items = ITEMS.lock().unwrap();
-                        for item in stash["items"].as_array().unwrap() {
-                            let item_key = format!(
-                                "{}/{}",
-                                stash_id.to_string(),
-                                item["id"].as_str().unwrap()
-                            );
-                            items.insert(item_key);
-                        }
-                        ON_ADD.do_send(LuaMessage::from(stash.to_string()));
-                    }
-                }
-
-                println!("tracked stashes: {}", stashes.len());
                 let act = System::current().registry().get::<RequestActor>();
                 act.do_send(Poll(v["next_change_id"].as_str().unwrap().to_string()));
                 // actix::System::current().stop();
@@ -236,6 +229,7 @@ fn main() {
     System::run(|| {
         RequestActor {}.start();
         Bootstrap {}.start();
+        ParseStash {}.start();
     });
     // let system = System::new("test");
 
