@@ -76,7 +76,7 @@ impl Message for StashMessage {
 impl Handler<StashMessage> for ParseStash {
     type Result = ();
 
-    fn handle(&mut self, msg: StashMessage, ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: StashMessage, _ctx: &mut Context<Self>) -> Self::Result {
         let v = msg.0;
 
         let mut stashes = STASHES.lock().unwrap();
@@ -169,19 +169,18 @@ impl Handler<Poll> for RequestActor {
             .finish()
             .unwrap()
             .send()
-            .map_err(|e| println!("request error {:?}", e))
+            .map_err(|e| panic!("request error {:?}", e))
             .and_then(move |response| {
                 // println!("Response: {:?}", response);
                 response.body().limit(10 * 1024 * 1024).map_err(|e| {
-                    println!("request body error {:?}", e);
-                    ()
+                    panic!("request body error {:?}", e);
                 })
             }).and_then(|body| {
                 // let b = format!("{}", body);
                 // println!("{:?}", &b.to_string()[..100]);
                 let v: Value = serde_json::from_slice(&body).unwrap();
-                println!("Body: {:?}", body.len());
-                println!("next: {:?}", v["next_change_id"]);
+                // println!("Body: {:?}", body.len());
+                println!("next: {}", v["next_change_id"]);
 
                 let act = System::current().registry().get::<ParseStash>();
                 act.do_send(StashMessage(v.clone()));
@@ -207,18 +206,18 @@ impl Actor for Bootstrap {
             .finish()
             .unwrap()
             .send()
-            .map_err(|e| println!("error {:?}", e))
+            .map_err(|e| panic!("error {:?}", e))
             .and_then(move |response| {
-                println!("Response: {:?}", response);
                 response.body().limit(10 * 1024 * 1024).map_err(|e| {
-                    println!("request body error {:?}", e);
-                    ()
+                    panic!("request body error {:?}", e);
                 })
             }).and_then(|body| {
                 let v: Value = serde_json::from_slice(&body).unwrap();
-                println!("{}", String::from_utf8(body.to_vec()).unwrap());
+                // println!("{}", String::from_utf8(body.to_vec()).unwrap());
                 let act = System::current().registry().get::<RequestActor>();
-                act.do_send(Poll(v["next_change_id"].as_str().unwrap().to_string()));
+                let next_change_id = v["next_change_id"].as_str().unwrap().to_string();
+                println!("starting from offset: {}", next_change_id);
+                act.do_send(Poll(next_change_id));
                 Ok(())
             }).into_actor(self)
             .wait(ctx);
