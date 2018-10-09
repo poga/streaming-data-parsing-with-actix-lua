@@ -114,12 +114,10 @@ impl Handler<StashMessage> for ParseStash {
                         format!("{}/{}", stash_id.to_string(), item["id"].as_str().unwrap());
 
                     if let Some(_) = new_items.get(&item_key) {
-                        // println!("new item on market: {:?}", item);
                         new_item_stash_items.push(item.clone());
                     }
 
                     if let Some(_) = removed_items.get(&item_key) {
-                        // println!("remove item from market: {:?}", item);
                         removed_item_stash_items.push(item.clone());
                     }
                 }
@@ -178,15 +176,11 @@ impl Handler<Poll> for RequestActor {
             .send()
             .map_err(|e| panic!("request error {:?}", e))
             .and_then(move |response| {
-                // println!("Response: {:?}", response);
                 response.body().limit(10 * 1024 * 1024).map_err(|e| {
                     panic!("request body error {:?}", e);
                 })
             }).and_then(|body| {
-                // let b = format!("{}", body);
-                // println!("{:?}", &b.to_string()[..100]);
                 let v: Value = serde_json::from_slice(&body).unwrap();
-                // println!("Body: {:?}", body.len());
                 println!("next: {}", v["next_change_id"]);
 
                 let act = System::current().registry().get::<ParseStash>();
@@ -194,7 +188,7 @@ impl Handler<Poll> for RequestActor {
 
                 let act = System::current().registry().get::<RequestActor>();
                 act.do_send(Poll(v["next_change_id"].as_str().unwrap().to_string()));
-                // actix::System::current().stop();
+
                 Ok(())
             }).into_actor(self)
             .wait(ctx);
@@ -220,10 +214,11 @@ impl Actor for Bootstrap {
                 })
             }).and_then(|body| {
                 let v: Value = serde_json::from_slice(&body).unwrap();
-                // println!("{}", String::from_utf8(body.to_vec()).unwrap());
-                let act = System::current().registry().get::<RequestActor>();
+
                 let next_change_id = v["next_change_id"].as_str().unwrap().to_string();
                 println!("starting from offset: {}", next_change_id);
+
+                let act = System::current().registry().get::<RequestActor>();
                 act.do_send(Poll(next_change_id));
                 Ok(())
             }).into_actor(self)
@@ -237,7 +232,4 @@ fn main() {
         Bootstrap {}.start();
         ParseStash {}.start();
     });
-    // let system = System::new("test");
-
-    // system.run();
 }
