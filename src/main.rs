@@ -27,12 +27,14 @@ lazy_static! {
             .on_handle_with_lua(
                 r#"
             local json = require("json")
-            local data = json.decode(ctx.msg)
-            for i, v in pairs(data["items"]) do
-                if string.find(v["name"], "Belly of the Beast") then
-                    print(data["accountName"])
-                end
+            if ctx.msg == 0 then
+                print("reloading")
+                package.loaded["on_add"] = nil
+                return 0
             end
+
+            local handler = require("on_add")
+            handler(ctx.msg)
             return 0
             "#,
             ).build()
@@ -144,6 +146,9 @@ impl Handler<StashMessage> for ParseStash {
                 ON_ADD.do_send(LuaMessage::from(stash.to_string()));
             }
         }
+
+        // trigger reload
+        ON_ADD.do_send(LuaMessage::from(0));
 
         println!("tracked stashes: {}", stashes.len());
     }

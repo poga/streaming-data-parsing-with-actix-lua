@@ -6,7 +6,7 @@ authors = ["Poga Po <poga.bahamut@gmail.com>"]
 [dependencies]
 actix-web = {version= "0.7",  features = ["tls"] }
 futures = "0.1"
-actix-lua = "0.3.1"
+actix-lua = "0.3"
 actix = "0.7"
 lazy_static = "1.1.0"
 serde_json = "1.0"
