@@ -34,7 +34,8 @@ lazy_static! {
             end
 
             local handler = require("on_add")
-            handler(ctx.msg)
+            local data = json.decode(ctx.msg)
+            handler(data)
             return 0
             "#,
             ).build()
@@ -45,7 +46,8 @@ lazy_static! {
         LuaActorBuilder::new()
             .on_handle_with_lua(
                 r#"
-            print('lua remove')
+            -- print('lua remove')
+            -- ignore it for now.
             return 0
             "#,
             ).build()
@@ -121,7 +123,6 @@ impl Handler<StashMessage> for ParseStash {
                     }
                 }
 
-                // TODO: pass userdata instead of string
                 if new_item_stash_items.len() > 0 {
                     new_item_stash["items"] = Value::from(new_item_stash_items);
                     ON_ADD.do_send(LuaMessage::from(new_item_stash.to_string()));
@@ -147,7 +148,7 @@ impl Handler<StashMessage> for ParseStash {
             }
         }
 
-        // trigger reload
+        // reload script after every batch
         ON_ADD.do_send(LuaMessage::from(0));
 
         println!("tracked stashes: {}", stashes.len());
@@ -155,16 +156,16 @@ impl Handler<StashMessage> for ParseStash {
 }
 
 #[derive(Default)]
-struct RequestActor {}
+struct PollActor {}
 
-impl Actor for RequestActor {
+impl Actor for PollActor {
     type Context = Context<Self>;
 }
 
-impl actix::Supervised for RequestActor {}
-impl SystemService for RequestActor {}
+impl actix::Supervised for PollActor {}
+impl SystemService for PollActor {}
 
-impl Handler<Poll> for RequestActor {
+impl Handler<Poll> for PollActor {
     type Result = ();
 
     fn handle(&mut self, msg: Poll, ctx: &mut Context<Self>) -> Self::Result {
@@ -188,7 +189,7 @@ impl Handler<Poll> for RequestActor {
                 let act = System::current().registry().get::<ParseStash>();
                 act.do_send(StashMessage(v.clone()));
 
-                let act = System::current().registry().get::<RequestActor>();
+                let act = System::current().registry().get::<PollActor>();
                 act.do_send(Poll(v["next_change_id"].as_str().unwrap().to_string()));
 
                 Ok(())
@@ -220,7 +221,7 @@ impl Actor for Bootstrap {
                 let next_change_id = v["next_change_id"].as_str().unwrap().to_string();
                 println!("starting from offset: {}", next_change_id);
 
-                let act = System::current().registry().get::<RequestActor>();
+                let act = System::current().registry().get::<PollActor>();
                 act.do_send(Poll(next_change_id));
                 Ok(())
             }).into_actor(self)
@@ -230,7 +231,7 @@ impl Actor for Bootstrap {
 
 fn main() {
     System::run(|| {
-        RequestActor {}.start();
+        PollActor {}.start();
         Bootstrap {}.start();
         ParseStash {}.start();
     });
