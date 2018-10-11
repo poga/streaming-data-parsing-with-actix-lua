@@ -28,7 +28,6 @@ lazy_static! {
                 r#"
             local json = require("json")
             if ctx.msg == 0 then
-                print("reloading")
                 package.loaded["on_add"] = nil
                 return 0
             end
@@ -151,7 +150,7 @@ impl Handler<StashMessage> for ParseStash {
         // reload script after every batch
         ON_ADD.do_send(LuaMessage::from(0));
 
-        println!("tracked stashes: {}", stashes.len());
+        // println!("tracked stashes: {}", stashes.len());
     }
 }
 
@@ -170,7 +169,7 @@ impl Handler<Poll> for PollActor {
 
     fn handle(&mut self, msg: Poll, ctx: &mut Context<Self>) -> Self::Result {
         let url = format!("{}?id={}", API_HOST, msg.0);
-        println!("polling {}", url);
+        // println!("polling {}", url);
         client::get(url)
             .header("User-Agent", "Actix-web")
             .timeout(Duration::new(30, 0))
@@ -184,7 +183,7 @@ impl Handler<Poll> for PollActor {
                 })
             }).and_then(|body| {
                 let v: Value = serde_json::from_slice(&body).unwrap();
-                println!("next: {}", v["next_change_id"]);
+                // println!("next: {}", v["next_change_id"]);
 
                 let act = System::current().registry().get::<ParseStash>();
                 act.do_send(StashMessage(v.clone()));
